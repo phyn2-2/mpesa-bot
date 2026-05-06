@@ -147,8 +147,13 @@ def insert_raw_event(
                 (user_id, raw_text, source, dedup_hash),
             )
             return cursor.lastrowid
-    except sqlite3.IntegrityError:
-        return None
+    except sqlite3.IntegrityError as e:
+        # Only swallow duplicate hash collisions (dedup).
+        # Re-raise CHECK constraint failures (bad source value, etc.)
+        # so callers are not silently misled about bad input data.
+        if "dedup_hash" in str(e):
+            return None
+        raise
 
 
 # ------------------------------------------------------------------ #
@@ -303,7 +308,7 @@ def get_spend_today(user_id: str) -> int:
             SELECT COALESCE(SUM(t.amount), 0) AS total
             FROM transactions t
             JOIN raw_events r ON r.id = t.raw_event_id
-            WHERE r.user_id = ?
+            WHERE r.user_id = :user_id
               AND t.type IN ('send', 'paybill', 'buy_goods', 'airtime')
               AND t.confidence IN ('HIGH', 'MEDIUM')
               AND date(
@@ -311,7 +316,7 @@ def get_spend_today(user_id: str) -> int:
                     :offset
                   ) = date('now', :offset)
             """,
-            {"user_id": user_id, "offset": _EAT_OFFSET},  # named params: safer with reuse
+            {"user_id": user_id, "offset": _EAT_OFFSET},
         ).fetchone()
     return row["total"]
 
@@ -324,7 +329,7 @@ def get_spend_yesterday(user_id: str) -> int:
             SELECT COALESCE(SUM(t.amount), 0) AS total
             FROM transactions t
             JOIN raw_events r ON r.id = t.raw_event_id
-            WHERE r.user_id = ?
+            WHERE r.user_id = :user_id
               AND t.type IN ('send', 'paybill', 'buy_goods', 'airtime')
               AND t.confidence IN ('HIGH', 'MEDIUM')
               AND date(
@@ -345,7 +350,7 @@ def get_spend_last_7_days(user_id: str) -> int:
             SELECT COALESCE(SUM(t.amount), 0) AS total
             FROM transactions t
             JOIN raw_events r ON r.id = t.raw_event_id
-            WHERE r.user_id = ?
+            WHERE r.user_id = :user_id
               AND t.type IN ('send', 'paybill', 'buy_goods', 'airtime')
               AND t.confidence IN ('HIGH', 'MEDIUM')
               AND date(
