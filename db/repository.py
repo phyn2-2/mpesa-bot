@@ -363,6 +363,26 @@ def get_spend_last_7_days(user_id: str) -> int:
     return row["total"]
 
 
+def get_raw_event_by_id(raw_event_id: int) -> Optional[RawEvent]:
+    """
+    Fetch a single raw event by primary key.
+
+    Added for pipeline.py: the pipeline works from IDs (not raw text)
+    to enforce store-first. It fetches the event here, then processes it.
+
+    Returns None if the ID does not exist — pipeline treats this as
+    a programming bug (NOT_FOUND status) not a retriable error.
+    """
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM raw_events WHERE id = ?",
+            (raw_event_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return RawEvent(**dict(row))
+
+
 def get_latest_transaction(user_id: str) -> Optional[Transaction]:
     """Most recent transaction for a user, regardless of type."""
     with _connect() as conn:
